@@ -21,6 +21,9 @@ using namespace m5avatar;
 /// 外部参照 ///
 extern Avatar avatar;
 extern bool servo_home;
+extern volatile bool servo_random_active;
+extern volatile int servo_rand_x;
+extern volatile int servo_rand_y;
 extern void sw_tone();
 extern void alarm_tone();
 ///////////////
@@ -139,6 +142,7 @@ void RealtimeAiMod::idle(void)
   if(robot->asyncPlaying || (pRtLLM->getOutputTextQueueSize() != 0)){
     // 発話中
     pRtLLM->setSpeaking(true);
+    servo_random_active = false;
   }
   else{
     // 発話停止中かつキューにテキストがない場合はLLM機能に発話終了を通知
@@ -150,6 +154,39 @@ void RealtimeAiMod::idle(void)
   // Alarm (Function Calling)
   alarmEventHandler();
   updateHeadTouchExpression();
+
+#ifdef USE_SERVO
+  // アイドル時のランダムサーボ動作
+  {
+    static uint32_t lastMoveTime = 0;
+    static uint32_t nextMoveInterval = 3000;
+    static bool isInRandomMove = false;
+    static uint32_t randomMoveEndTime = 0;
+
+    uint32_t now = millis();
+    if (!pRtLLM->isSpeaking()) {
+      if (isInRandomMove) {
+        if (now > randomMoveEndTime) {
+          isInRandomMove = false;
+          servo_random_active = false;
+          lastMoveTime = now;
+          nextMoveInterval = random(3000, 6001);
+        }
+      } else if (now - lastMoveTime > nextMoveInterval) {
+        servo_rand_x = random(-20, 21);
+        servo_rand_y = random(-10, 11);
+        servo_random_active = true;
+        isInRandomMove = true;
+        randomMoveEndTime = now + random(1000, 2001);
+      }
+    } else {
+      if (isInRandomMove) {
+        isInRandomMove = false;
+        servo_random_active = false;
+      }
+    }
+  }
+#endif
 
 #if 0 
   //スケジューラ処理
